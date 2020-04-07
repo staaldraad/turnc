@@ -136,7 +136,54 @@ func (c *Connection) Bind() error {
 	return nil
 }
 
-func (c *Connection) connect() error {
+func (c *Client) connectionbind(nid turn.ConnectionID) error {
+	// Starting transaction.
+	//a := c.alloc
+	res := stun.New()
+	req := stun.New()
+	req.TransactionID = stun.NewTransactionID()
+	req.Type = stun.NewType(stun.MethodConnectionBind, stun.ClassRequest)
+	req.WriteHeader()
+	setters := make([]stun.Setter, 0, 10)
+
+	setters = append(setters, nid)
+
+	setters = append(setters, stun.Fingerprint)
+	for _, s := range setters {
+		if setErr := s.AddTo(req); setErr != nil {
+			return setErr
+		}
+	}
+	if doErr := c.do(req, res); doErr != nil {
+		return doErr
+	}
+	if res.Type != stun.NewType(stun.MethodConnectionBind, stun.ClassSuccessResponse) {
+		return fmt.Errorf("unexpected response type %s", res.Type)
+	}
+
+	// Success.
+	return nil
+}
+
+// Bind performs binding transaction, allocating channel binding for
+// the connection.
+func (c *Client) ConnectionBind(nid turn.ConnectionID) error {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+
+	if err := c.connectionbind(nid); err != nil {
+		return err
+	}
+	//c.number = n
+	//c.startLoop(func() {
+	//	if err := c.refreshBind(); err != nil {
+	//		c.log.Error("failed to refresh bind", zap.Error(err))
+	//	}
+	//})
+	return nil
+}
+
+func (c *Connection) connect() (stun.RawAttribute, error) {
 	// Starting transaction.
 	a := c.client.alloc
 	res := stun.New()
@@ -155,37 +202,41 @@ func (c *Connection) connect() error {
 	//setters = append(setters, stun.Fingerprint)
 	for _, s := range setters {
 		if setErr := s.AddTo(req); setErr != nil {
-			return setErr
+			return stun.RawAttribute{}, setErr
 		}
 	}
 	if doErr := c.client.do(req, res); doErr != nil {
-		return doErr
+		return stun.RawAttribute{}, doErr
 	}
 	if res.Type != stun.NewType(stun.MethodConnect, stun.ClassSuccessResponse) {
-		return fmt.Errorf("unexpected response type %s", res.Type)
+		return stun.RawAttribute{}, fmt.Errorf("unexpected response type %s", res.Type)
 	}
 	// Success connected.
-	// get new connection id
-	fmt.Printf("Response: %x\n\n", res.Attributes)
-	return nil
+	//fmt.Printf("%x\n\n", res.Attributes)
+	// get new connection id -- CONNECTION_ID is 32-bit unsiqned int
+	CONNECTIONID, _ := res.Attributes.Get(0x2a)
+	//fmt.Println(b)
+	//fmt.Printf("Response: %x %x %d\n\n", CONNECTIONID.Type, CONNECTIONID.Length, binary.BigEndian.Uint32(CONNECTIONID.Value))
+	return CONNECTIONID, nil
 }
 
 // Connect performs connect transaction, setting up the TCP connection.
-func (c *Connection) Connect() error {
+func (c *Connection) Connect() (stun.RawAttribute, error) {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 	if c.number != 0 {
-		return ErrAlreadyBound
+		return stun.RawAttribute{}, ErrAlreadyBound
 	}
 	a := c.client.alloc
 	a.minBound++
 	n := a.minBound
-	if err := c.connect(); err != nil {
-		return err
-	}
 	c.number = n
+	connid, err := c.connect()
+	if err != nil {
+		return stun.RawAttribute{}, err
+	}
 
-	return nil
+	return connid, nil
 }
 
 // Write sends buffer to peer.
