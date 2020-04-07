@@ -89,16 +89,31 @@ func (c *Client) allocate(req, res *stun.Message) (*Allocation, error) {
 	}
 	return nil, errUnauthorised
 }
+func (c *Client) AllocateUDP() (*Allocation, error) {
+	return c.Allocate(turn.ProtoUDP)
+}
+func (c *Client) AllocateTCP() (*Allocation, error) {
+	return c.Allocate(turn.ProtoTCP)
+}
 
 // Allocate creates an allocation for current 5-tuple. Currently there can be
 // only one allocation per client, because client wraps one net.Conn.
-func (c *Client) Allocate() (*Allocation, error) {
+func (c *Client) Allocate(proto turn.Protocol) (*Allocation, error) {
 	var (
 		nonce stun.Nonce
 		res   = stun.New()
 	)
+	var protoSetter stun.Setter
+	if proto == turn.ProtoUDP {
+		protoSetter = turn.RequestedTransportUDP
+	} else if proto == turn.ProtoTCP {
+		protoSetter = turn.RequestedTransportTCP
+	} else {
+		return nil, fmt.Errorf("Invalid protocol supplied")
+	}
+
 	req, reqErr := stun.Build(stun.TransactionID,
-		turn.AllocateRequest, turn.RequestedTransportUDP,
+		turn.AllocateRequest, protoSetter,
 		stun.Fingerprint,
 	)
 	if reqErr != nil {
@@ -124,7 +139,7 @@ func (c *Client) Allocate() (*Allocation, error) {
 	)
 	// Trying to authorize.
 	if reqErr = req.Build(stun.TransactionID,
-		turn.AllocateRequest, turn.RequestedTransportUDP,
+		turn.AllocateRequest, protoSetter,
 		&c.username, &c.realm,
 		&nonce,
 		&c.integrity, stun.Fingerprint,

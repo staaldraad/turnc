@@ -40,7 +40,7 @@ func TestClient_Allocate(t *testing.T) {
 				stunClient.do = func(m *stun.Message, f func(e stun.Event)) error {
 					return doErr
 				}
-				if _, allocErr := c.Allocate(); allocErr != doErr {
+				if _, allocErr := c.AllocateUDP(); allocErr != doErr {
 					t.Fatal("unexpected error")
 				}
 			})
@@ -52,7 +52,7 @@ func TestClient_Allocate(t *testing.T) {
 					})
 					return nil
 				}
-				if _, allocErr := c.Allocate(); allocErr != evErr {
+				if _, allocErr := c.AllocateUDP(); allocErr != evErr {
 					t.Fatal("unexpected error")
 				}
 			})
@@ -91,7 +91,7 @@ func TestClient_Allocate(t *testing.T) {
 						return nil
 					}
 					stunClient.do = do
-					if _, allocErr := c.Allocate(); allocErr == nil {
+					if _, allocErr := c.AllocateUDP(); allocErr == nil {
 						t.Error("expected error")
 					}
 				})
@@ -112,7 +112,7 @@ func TestClient_Allocate(t *testing.T) {
 			})
 			return nil
 		}
-		a, allocErr := c.Allocate()
+		a, allocErr := c.AllocateUDP()
 		if allocErr != nil {
 			t.Fatal(allocErr)
 		}
@@ -396,7 +396,7 @@ func TestClient_Allocate(t *testing.T) {
 			})
 			return nil
 		}
-		a, allocErr := c.Allocate()
+		a, allocErr := c.AllocateUDP()
 		if allocErr != nil {
 			t.Fatal(allocErr)
 		}

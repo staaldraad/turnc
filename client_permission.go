@@ -106,3 +106,23 @@ func (p *Permission) CreateUDP(addr *net.UDPAddr) (*Connection, error) {
 	p.client.mux.Unlock()
 	return c, nil
 }
+
+// CreateTCP creates new TCP Permission to peer with provided addr.
+func (p *Permission) CreateTCP(addr *net.TCPAddr) (*Connection, error) {
+	peer := turn.PeerAddress{
+		IP:   addr.IP,
+		Port: addr.Port,
+	}
+	c := &Connection{
+		log:         p.log,
+		peerAddr:    peer,
+		client:      p.client,
+		refreshRate: p.client.refreshRate,
+	}
+	c.ctx, c.cancel = context.WithCancel(context.Background())
+	c.peerL, c.peerR = net.Pipe()
+	p.client.mux.Lock()
+	p.conn = append(p.conn, c)
+	p.client.mux.Unlock()
+	return c, nil
+}

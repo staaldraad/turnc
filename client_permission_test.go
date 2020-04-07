@@ -54,7 +54,7 @@ func TestPermission(t *testing.T) {
 					})
 					return nil
 				}
-				a, allocErr := c.Allocate()
+				a, allocErr := c.AllocateUDP()
 				if allocErr != nil {
 					t.Fatal(allocErr)
 				}
@@ -127,7 +127,7 @@ func TestPermission(t *testing.T) {
 					})
 					return nil
 				}
-				a, allocErr := c.Allocate()
+				a, allocErr := c.AllocateUDP()
 				if allocErr != nil {
 					t.Fatal(allocErr)
 				}
@@ -223,7 +223,7 @@ func TestPermission(t *testing.T) {
 					})
 					return nil
 				}
-				a, allocErr := c.Allocate()
+				a, allocErr := c.AllocateUDP()
 				if allocErr != nil {
 					t.Fatal(allocErr)
 				}
@@ -311,7 +311,7 @@ func TestPermission(t *testing.T) {
 					})
 					return nil
 				}
-				a, allocErr := c.Allocate()
+				a, allocErr := c.AllocateUDP()
 				if allocErr != nil {
 					t.Fatal(allocErr)
 				}
@@ -420,7 +420,7 @@ func TestPermission(t *testing.T) {
 					})
 					return nil
 				}
-				a, allocErr := c.Allocate()
+				a, allocErr := c.AllocateUDP()
 				if allocErr != nil {
 					t.Fatal(allocErr)
 				}
@@ -529,7 +529,7 @@ func TestPermission(t *testing.T) {
 					})
 					return nil
 				}
-				a, allocErr := c.Allocate()
+				a, allocErr := c.AllocateUDP()
 				if allocErr != nil {
 					t.Fatal(allocErr)
 				}

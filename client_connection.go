@@ -136,6 +136,58 @@ func (c *Connection) Bind() error {
 	return nil
 }
 
+func (c *Connection) connect() error {
+	// Starting transaction.
+	a := c.client.alloc
+	res := stun.New()
+	req := stun.New()
+	req.TransactionID = stun.NewTransactionID()
+	req.Type = stun.NewType(stun.MethodConnect, stun.ClassRequest)
+	req.WriteHeader()
+	setters := make([]stun.Setter, 0, 10)
+	setters = append(setters, &c.peerAddr)
+	if len(a.integrity) > 0 {
+		// Applying auth.
+		setters = append(setters,
+			a.nonce, a.client.username, a.client.realm, a.integrity,
+		)
+	}
+	//setters = append(setters, stun.Fingerprint)
+	for _, s := range setters {
+		if setErr := s.AddTo(req); setErr != nil {
+			return setErr
+		}
+	}
+	if doErr := c.client.do(req, res); doErr != nil {
+		return doErr
+	}
+	if res.Type != stun.NewType(stun.MethodConnect, stun.ClassSuccessResponse) {
+		return fmt.Errorf("unexpected response type %s", res.Type)
+	}
+	// Success connected.
+	// get new connection id
+	fmt.Printf("Response: %x\n\n", res.Attributes)
+	return nil
+}
+
+// Connect performs connect transaction, setting up the TCP connection.
+func (c *Connection) Connect() error {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+	if c.number != 0 {
+		return ErrAlreadyBound
+	}
+	a := c.client.alloc
+	a.minBound++
+	n := a.minBound
+	if err := c.connect(); err != nil {
+		return err
+	}
+	c.number = n
+
+	return nil
+}
+
 // Write sends buffer to peer.
 //
 // If permission is bound, the ChannelData message will be used.

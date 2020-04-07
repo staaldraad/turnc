@@ -294,7 +294,7 @@ func TestClientMultiplexed(t *testing.T) {
 		}
 		gotRequest <- struct{}{}
 	}()
-	a, allocErr := c.Allocate()
+	a, allocErr := c.AllocateUDP()
 	if allocErr != nil {
 		t.Fatal(allocErr)
 	}
@@ -532,7 +532,7 @@ func TestClient_STUNHandler(t *testing.T) {
 			}
 			return nil
 		}
-		a, allocErr := c.Allocate()
+		a, allocErr := c.AllocateUDP()
 		if allocErr != nil {
 			t.Fatal(allocErr)
 		}
