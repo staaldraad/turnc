@@ -2,6 +2,7 @@ package turnc
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -176,7 +177,8 @@ func (c *Client) handleChannelData(data *turn.ChannelData) {
 }
 
 func (c *Client) readUntilClosed() {
-	buf := make([]byte, 1500)
+	buf := make([]byte, 2048)
+	datBuf := make([]byte, 0)
 	for {
 		n, err := c.con.Read(buf)
 		if err != nil {
@@ -187,18 +189,24 @@ func (c *Client) readUntilClosed() {
 			c.log.Info("connection closed")
 			break
 		}
-		data := buf[:n]
+
+		data := append(datBuf, buf[:n]...)
 		if !turn.IsChannelData(data) {
 			continue
 		}
 		cData := &turn.ChannelData{
-			Raw: make([]byte, n),
+			Raw: make([]byte, len(data)),
 		}
 		copy(cData.Raw, data)
 		if err := cData.Decode(); err != nil {
-			panic(err)
+			// channelData length != len(Data)
+			// readmore
+			fmt.Println("channelData length != len(Data)")
+			//panic(err)
+		} else {
+			datBuf = make([]byte, 0)
+			go c.handleChannelData(cData)
 		}
-		go c.handleChannelData(cData)
 	}
 	close(c.done)
 }
