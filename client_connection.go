@@ -136,9 +136,9 @@ func (c *Connection) Bind() error {
 	return nil
 }
 
-func (c *Client) connectionbind(nid turn.ConnectionID) error {
+func (c *Client) connectionbind(nid turn.ConnectionID, allocation *Allocation) error {
 	// Starting transaction.
-	//a := c.alloc
+
 	res := stun.New()
 	req := stun.New()
 	req.TransactionID = stun.NewTransactionID()
@@ -146,7 +146,14 @@ func (c *Client) connectionbind(nid turn.ConnectionID) error {
 	req.WriteHeader()
 	setters := make([]stun.Setter, 0, 10)
 
+	//setters = append(setters, &c.peerAddr)
 	setters = append(setters, nid)
+	if len(allocation.integrity) > 0 {
+		// Applying auth.
+		setters = append(setters,
+			allocation.nonce, allocation.client.username, allocation.client.realm, allocation.integrity,
+		)
+	}
 
 	setters = append(setters, stun.Fingerprint)
 	for _, s := range setters {
@@ -167,11 +174,11 @@ func (c *Client) connectionbind(nid turn.ConnectionID) error {
 
 // Bind performs binding transaction, allocating channel binding for
 // the connection.
-func (c *Client) ConnectionBind(nid turn.ConnectionID) error {
+func (c *Client) ConnectionBind(nid turn.ConnectionID, allocation *Allocation) error {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 
-	if err := c.connectionbind(nid); err != nil {
+	if err := c.connectionbind(nid, allocation); err != nil {
 		return err
 	}
 	//c.number = n
