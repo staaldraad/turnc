@@ -122,7 +122,7 @@ func (c *Connection) Bind() error {
 		return ErrAlreadyBound
 	}
 	a := c.client.alloc
-	a.minBound++
+	//a.minBound++
 	n := a.minBound
 	if err := c.bind(n); err != nil {
 		return err
@@ -178,15 +178,13 @@ func (c *Client) ConnectionBind(nid turn.ConnectionID, allocation *Allocation) e
 	c.mux.Lock()
 	defer c.mux.Unlock()
 
+	allocation.minBound++
+
 	if err := c.connectionbind(nid, allocation); err != nil {
 		return err
 	}
-	//c.number = n
-	//c.startLoop(func() {
-	//	if err := c.refreshBind(); err != nil {
-	//		c.log.Error("failed to refresh bind", zap.Error(err))
-	//	}
-	//})
+	c.alloc = allocation
+
 	return nil
 }
 
