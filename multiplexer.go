@@ -24,7 +24,7 @@ type multiplexer struct {
 }
 
 func newMultiplexer(conn net.Conn, log *zap.Logger) *multiplexer {
-	m := &multiplexer{conn: conn, capacity: 1500, log: log}
+	m := &multiplexer{conn: conn, capacity: 1024, log: log}
 	m.stunL, m.stunR = net.Pipe()
 	m.turnL, m.turnR = net.Pipe()
 	m.dataL, m.dataR = net.Pipe()
@@ -71,9 +71,11 @@ func (m *multiplexer) readUntilClosed() {
 		conn := m.dataR
 		switch {
 		case stun.IsMessage(data):
+			//fmt.Printf("stun: %x\n", (data))
 			m.log.Debug("mux: got STUN data")
 			conn = m.stunR
 		case turn.IsChannelData(data):
+			//fmt.Printf("got turn: %x\n", (data))
 			m.log.Debug("mux: got TURN data")
 			conn = m.turnR
 		default:

@@ -88,7 +88,7 @@ var ErrNotImplemented = errors.New("functionality not implemented")
 func (p *Permission) removeConn(connection *Connection) {}
 
 // CreateUDP creates new UDP Permission to peer with provided addr.
-func (p *Permission) CreateUDP(addr *net.UDPAddr) (*Connection, error) {
+func (p *Permission) CreateUDP(addr *net.TCPAddr) (*Connection, error) {
 	peer := turn.PeerAddress{
 		IP:   addr.IP,
 		Port: addr.Port,
@@ -105,6 +105,10 @@ func (p *Permission) CreateUDP(addr *net.UDPAddr) (*Connection, error) {
 	p.conn = append(p.conn, c)
 	p.client.mux.Unlock()
 	return c, nil
+}
+
+func (p *Permission) ClientSet(client *Client) {
+	p.client = client
 }
 
 // CreateTCP creates new TCP Permission to peer with provided addr.

@@ -120,10 +120,6 @@ func New(o Options) (*Client, error) {
 	return c, nil
 }
 
-func (c *Client) StartRead() {
-	go c.readUntilClosed()
-}
-
 // STUNClient abstracts STUN protocol interaction.
 type STUNClient interface {
 	Indicate(m *stun.Message) error
@@ -181,7 +177,7 @@ func (c *Client) handleChannelData(data *turn.ChannelData) {
 }
 
 func (c *Client) readUntilClosed() {
-	buf := make([]byte, 512)
+	buf := make([]byte, 256)
 	datBuf := make([]byte, 0)
 
 	for {
@@ -197,6 +193,7 @@ func (c *Client) readUntilClosed() {
 
 		data := append(datBuf, buf[:n]...)
 		if !turn.IsChannelData(data) {
+			copy(datBuf, data)
 			continue
 		}
 		cData := &turn.ChannelData{
@@ -204,21 +201,13 @@ func (c *Client) readUntilClosed() {
 		}
 		copy(cData.Raw, data)
 		if err := cData.Decode(); err != nil {
-			datBuf = append(datBuf, data...)
-			// channelData length != len(Data)
-			// readmore
-			//fmt.Println(string(datBuf))
-			//fmt.Printf("%d != %d \n", cData.Length, len(data))
-			//fmt.Println(string(data))
+			//datBuf = make([]byte, len(data))
+			//copy(datBuf, data)
 			fmt.Println("[x] Reading error, channels are out of sync...")
-			break
-			//cData.Length = len(data)
-			//go c.handleChannelData(cData)
-			//fmt.Println(len(c.alloc.perms[0].conn[0]))
-			//c.alloc.perms[0].conn[0].peerL.Write(cData.Data)
+			c.alloc.perms[0].conn[1].Write(data)
 		} else {
-			l := len(datBuf)
-			datBuf = data[l-len(data):]
+			datBuf = make([]byte, len(data[cData.Length:]))
+			copy(datBuf, data[cData.Length:])
 			go c.handleChannelData(cData)
 		}
 	}

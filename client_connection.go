@@ -122,23 +122,42 @@ func (c *Connection) Bind() error {
 		return ErrAlreadyBound
 	}
 	a := c.client.alloc
-	//a.minBound++
+	a.minBound++
 	n := a.minBound
 	if err := c.bind(n); err != nil {
 		return err
 	}
 	c.number = n
+
 	c.startLoop(func() {
 		if err := c.refreshBind(); err != nil {
 			c.log.Error("failed to refresh bind", zap.Error(err))
 		}
 	})
+
 	return nil
 }
 
-func (c *Client) connectionbind(nid turn.ConnectionID, allocation *Allocation) error {
+func (c *Client) connectionbind(nid turn.ConnectionID) (*Connection, error) {
 	// Starting transaction.
+	//c.mux.Lock()
+	//defer c.mux.Unlock()
+	peer := turn.PeerAddress{
+		IP:   c.alloc.relayed.IP,
+		Port: 0,
+	}
+	conn := &Connection{
+		log:         c.log,
+		peerAddr:    peer,
+		client:      c,
+		refreshRate: c.refreshRate,
+	}
+	conn.ctx, conn.cancel = context.WithCancel(context.Background())
+	conn.peerL, conn.peerR = net.Pipe()
 
+	c.alloc.perms[0].conn = append(c.alloc.perms[0].conn, conn)
+
+	a := c.alloc
 	res := stun.New()
 	req := stun.New()
 	req.TransactionID = stun.NewTransactionID()
@@ -146,46 +165,46 @@ func (c *Client) connectionbind(nid turn.ConnectionID, allocation *Allocation) e
 	req.WriteHeader()
 	setters := make([]stun.Setter, 0, 10)
 
-	//setters = append(setters, &c.peerAddr)
 	setters = append(setters, nid)
-	if len(allocation.integrity) > 0 {
+	if len(a.integrity) > 0 {
 		// Applying auth.
 		setters = append(setters,
-			allocation.nonce, allocation.client.username, allocation.client.realm, allocation.integrity,
+			a.nonce, a.integrity,
 		)
 	}
 
 	setters = append(setters, stun.Fingerprint)
 	for _, s := range setters {
 		if setErr := s.AddTo(req); setErr != nil {
-			return setErr
+			return nil, setErr
 		}
 	}
 	if doErr := c.do(req, res); doErr != nil {
-		return doErr
+		return nil, doErr
 	}
 	if res.Type != stun.NewType(stun.MethodConnectionBind, stun.ClassSuccessResponse) {
-		return fmt.Errorf("unexpected response type %s", res.Type)
+		return nil, fmt.Errorf("unexpected response type %s", res.Type)
 	}
 
 	// Success.
-	return nil
+	return conn, nil
 }
 
 // Bind performs binding transaction, allocating channel binding for
 // the connection.
-func (c *Client) ConnectionBind(nid turn.ConnectionID, allocation *Allocation) error {
+func (c *Client) ConnectionBind(nid turn.ConnectionID, allocation *Allocation) (*Connection, error) {
 	c.mux.Lock()
 	defer c.mux.Unlock()
-
-	allocation.minBound++
-
-	if err := c.connectionbind(nid, allocation); err != nil {
-		return err
+	var alloc *Allocation = &Allocation{
+		relayed:   allocation.relayed,
+		reflexive: allocation.reflexive,
+		perms:     allocation.perms,
+		minBound:  allocation.minBound,
+		integrity: allocation.integrity,
+		nonce:     allocation.nonce,
 	}
-	c.alloc = allocation
-
-	return nil
+	c.alloc = alloc
+	return c.connectionbind(nid)
 }
 
 func (c *Connection) connect() (stun.RawAttribute, error) {
@@ -221,7 +240,7 @@ func (c *Connection) connect() (stun.RawAttribute, error) {
 	// get new connection id -- CONNECTION_ID is 32-bit unsiqned int
 	CONNECTIONID, _ := res.Attributes.Get(0x2a)
 	//fmt.Println(b)
-	//fmt.Printf("Response: %x %x %d\n\n", CONNECTIONID.Type, CONNECTIONID.Length, binary.BigEndian.Uint32(CONNECTIONID.Value))
+	//fmt.Printf("Response: %x %x %d\n\n", CONNECTIONID.Type, CONNECTIONID.Length, CONNECTIONID.Value)
 	return CONNECTIONID, nil
 }
 
