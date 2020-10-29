@@ -138,7 +138,7 @@ func (c *Connection) Bind() error {
 	return nil
 }
 
-func (c *Client) connectionbind(nid turn.ConnectionID) (*Connection, error) {
+func (c *Client) connectionbind(nid turn.ConnectionID, p *Connection) (*Connection, error) {
 	// Starting transaction.
 	//c.mux.Lock()
 	//defer c.mux.Unlock()
@@ -151,11 +151,12 @@ func (c *Client) connectionbind(nid turn.ConnectionID) (*Connection, error) {
 		peerAddr:    peer,
 		client:      c,
 		refreshRate: c.refreshRate,
+		//number:      c.alloc.perms[0].conn[0].number,
 	}
 	conn.ctx, conn.cancel = context.WithCancel(context.Background())
 	conn.peerL, conn.peerR = net.Pipe()
 
-	c.alloc.perms[0].conn = append(c.alloc.perms[0].conn, conn)
+	c.alloc.perms[0].conn = append(make([]*Connection, 0), p)
 
 	a := c.alloc
 	res := stun.New()
@@ -169,7 +170,7 @@ func (c *Client) connectionbind(nid turn.ConnectionID) (*Connection, error) {
 	if len(a.integrity) > 0 {
 		// Applying auth.
 		setters = append(setters,
-			a.nonce, a.integrity,
+			a.nonce, a.client.username, a.client.realm, a.integrity,
 		)
 	}
 
@@ -185,14 +186,20 @@ func (c *Client) connectionbind(nid turn.ConnectionID) (*Connection, error) {
 	if res.Type != stun.NewType(stun.MethodConnectionBind, stun.ClassSuccessResponse) {
 		return nil, fmt.Errorf("unexpected response type %s", res.Type)
 	}
-
+	// check if any trailing data
+	d, present := res.Attributes.Get(stun.AttrData)
+	if present {
+		//fmt.Println(string(d.Value))
+		// write to connection
+		go c.sideChan.Write(d.Value)
+	}
 	// Success.
 	return conn, nil
 }
 
 // Bind performs binding transaction, allocating channel binding for
 // the connection.
-func (c *Client) ConnectionBind(nid turn.ConnectionID, allocation *Allocation) (*Connection, error) {
+func (c *Client) ConnectionBind(nid turn.ConnectionID, allocation *Allocation, p *Connection) (*Connection, error) {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 	var alloc *Allocation = &Allocation{
@@ -203,8 +210,9 @@ func (c *Client) ConnectionBind(nid turn.ConnectionID, allocation *Allocation) (
 		integrity: allocation.integrity,
 		nonce:     allocation.nonce,
 	}
+
 	c.alloc = alloc
-	return c.connectionbind(nid)
+	return c.connectionbind(nid, p)
 }
 
 func (c *Connection) connect() (stun.RawAttribute, error) {
@@ -267,11 +275,14 @@ func (c *Connection) Connect() (stun.RawAttribute, error) {
 //
 // If permission is bound, the ChannelData message will be used.
 func (c *Connection) Write(b []byte) (n int, err error) {
+
 	if n := c.Binding(); n.Valid() {
 		c.log.Debug("using channel data to write")
 		return c.client.sendChan(b, n)
 	}
 	c.log.Debug("using STUN to write")
+	//fmt.Printf("Writing STUN: %x\n", b)
+	//return c.client.sendRaw(b)
 	return c.client.sendData(b, &c.peerAddr)
 }
 

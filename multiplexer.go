@@ -21,13 +21,16 @@ type multiplexer struct {
 	stunL, stunR net.Conn
 	turnL, turnR net.Conn
 	dataL, dataR net.Conn
+
+	sideChan io.PipeWriter
 }
 
-func newMultiplexer(conn net.Conn, log *zap.Logger) *multiplexer {
-	m := &multiplexer{conn: conn, capacity: 1024, log: log}
+func newMultiplexer(conn net.Conn, log *zap.Logger, sideChan io.PipeWriter) *multiplexer {
+	m := &multiplexer{conn: conn, capacity: 1500, log: log}
 	m.stunL, m.stunR = net.Pipe()
 	m.turnL, m.turnR = net.Pipe()
 	m.dataL, m.dataR = net.Pipe()
+	m.sideChan = sideChan
 	go m.readUntilClosed()
 	return m
 }
@@ -58,6 +61,7 @@ func (m *multiplexer) close() {
 func (m *multiplexer) readUntilClosed() {
 	buf := make([]byte, m.capacity)
 	for {
+		//fmt.Println("readloop")
 		n, err := m.conn.Read(buf)
 		m.log.Debug("mux: read", zap.Int("n", n), zap.Error(err))
 		if err != nil {
@@ -75,10 +79,17 @@ func (m *multiplexer) readUntilClosed() {
 			m.log.Debug("mux: got STUN data")
 			conn = m.stunR
 		case turn.IsChannelData(data):
-			//fmt.Printf("got turn: %x\n", (data))
+			//fmt.Printf("got turn: %s\n", string(data))
+			// control channel has data that should go to data channel, but at this point it is a different TCP connection
 			m.log.Debug("mux: got TURN data")
 			conn = m.turnR
+
+			m.sideChan.Write(data)
+
+			//m.conn.Write(data)
 		default:
+			//fmt.Printf("app data %x\n", data)
+			m.sideChan.Write(data)
 			m.log.Debug("mux: got APP data")
 		}
 		_, err = conn.Write(data)

@@ -2,7 +2,6 @@ package turnc
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -20,6 +19,7 @@ import (
 type Client struct {
 	log         *zap.Logger
 	con         net.Conn
+	conData     net.TCPConn
 	conClose    bool
 	stun        STUNClient
 	mux         sync.RWMutex
@@ -30,6 +30,7 @@ type Client struct {
 	alloc       *Allocation // the only allocation
 	refreshRate time.Duration
 	done        chan struct{}
+	sideChan    io.PipeWriter
 }
 
 // Options contains available config for TURN  client.
@@ -78,7 +79,7 @@ func New(o Options) (*Client, error) {
 	}
 	if o.STUN == nil {
 		// Setting up de-multiplexing.
-		m := newMultiplexer(o.Conn, c.log)
+		m := newMultiplexer(o.Conn, c.log, io.PipeWriter{})
 		go m.discardData() // discarding any non-stun/turn data
 		o.Conn = bypassWriter{
 			reader: m.turnL,
@@ -116,6 +117,72 @@ func New(o Options) (*Client, error) {
 	if o.Username != "" {
 		c.username = stun.NewUsername(o.Username)
 	}
+	go c.readUntilClosed()
+	return c, nil
+}
+
+func NewData(o Options, sideChan io.PipeWriter) (*Client, error) {
+	if o.Conn == nil {
+		return nil, errors.New("connection not provided")
+	}
+	if o.Log == nil {
+		o.Log = zap.NewNop()
+	}
+	c := &Client{
+		password: o.Password,
+		log:      o.Log,
+		conClose: true,
+	}
+	if o.ConnManualClose {
+		o.Log.Debug("manual close is enabled")
+		c.conClose = false
+	}
+	if o.STUN == nil {
+
+		// Setting up de-multiplexing.
+		m := newMultiplexer(o.Conn, c.log, sideChan)
+		go m.discardData() // discarding any non-stun/turn data
+
+		o.Conn = bypassWriter{
+			reader: m.turnL,
+			writer: m.conn,
+		}
+
+		//go o.sideData(conn)
+		// Starting STUN client on multiplexed connection.
+		var err error
+		stunOptions := []stun.ClientOption{
+			stun.WithHandler(c.stunHandler),
+		}
+		if o.NoRetransmit {
+			stunOptions = append(stunOptions, stun.WithNoRetransmit)
+		}
+		if o.RTO > 0 {
+			stunOptions = append(stunOptions, stun.WithRTO(o.RTO))
+		}
+		o.STUN, err = stun.NewClient(bypassWriter{
+			reader: m.stunL,
+			writer: m.conn,
+		}, stunOptions...)
+		if err != nil {
+			return nil, err
+		}
+	}
+	c.done = make(chan struct{})
+	c.stun = o.STUN
+	c.con = o.Conn
+	c.refreshRate = defaultRefreshRate
+	if o.RefreshRate > 0 {
+		c.refreshRate = o.RefreshRate
+	}
+	if o.RefreshDisabled {
+		c.refreshRate = 0
+	}
+	if o.Username != "" {
+		c.username = stun.NewUsername(o.Username)
+	}
+	c.sideChan = sideChan // side channel
+
 	go c.readUntilClosed()
 	return c, nil
 }
@@ -177,8 +244,9 @@ func (c *Client) handleChannelData(data *turn.ChannelData) {
 }
 
 func (c *Client) readUntilClosed() {
-	buf := make([]byte, 256)
-	datBuf := make([]byte, 0)
+	bufSize := 2046
+	buf := make([]byte, bufSize)
+	datBuf := make([]byte, bufSize)
 
 	for {
 		n, err := c.con.Read(buf)
@@ -193,6 +261,7 @@ func (c *Client) readUntilClosed() {
 
 		data := append(datBuf, buf[:n]...)
 		if !turn.IsChannelData(data) {
+			datBuf = make([]byte, len(data))
 			copy(datBuf, data)
 			continue
 		}
@@ -203,15 +272,19 @@ func (c *Client) readUntilClosed() {
 		if err := cData.Decode(); err != nil {
 			//datBuf = make([]byte, len(data))
 			//copy(datBuf, data)
-			fmt.Println("[x] Reading error, channels are out of sync...")
-			c.alloc.perms[0].conn[1].Write(data)
+			//fmt.Println("[x] Reading error, channels are out of sync...")
+			//c.alloc.perms[0].conn[0].Write(datBuf)
+			continue
 		} else {
-			datBuf = make([]byte, len(data[cData.Length:]))
-			copy(datBuf, data[cData.Length:])
+			//fmt.Println("data")
 			go c.handleChannelData(cData)
+			datBuf = make([]byte, bufSize)
 		}
 	}
 	close(c.done)
+}
+func (c *Client) Connection() net.TCPConn {
+	return c.conData
 }
 
 func (c *Client) sendData(buf []byte, peerAddr *turn.PeerAddress) (int, error) {
