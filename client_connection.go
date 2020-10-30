@@ -170,7 +170,7 @@ func (c *Client) connectionbind(nid turn.ConnectionID, p *Connection) (*Connecti
 	if len(a.integrity) > 0 {
 		// Applying auth.
 		setters = append(setters,
-			a.nonce, a.client.username, a.client.realm, a.integrity,
+			a.nonce, c.username, c.realm, a.integrity,
 		)
 	}
 
