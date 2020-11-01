@@ -89,16 +89,42 @@ func (c *Client) allocate(req, res *stun.Message) (*Allocation, error) {
 	}
 	return nil, errUnauthorised
 }
+
+type ipversion int
+
+const (
+	AUTOIPV ipversion = 0
+	IPV4              = 1
+	IPV6              = 2
+)
+
 func (c *Client) AllocateUDP() (*Allocation, error) {
-	return c.Allocate(turn.ProtoUDP)
+	return c.Allocate(turn.ProtoUDP, AUTOIPV)
 }
+
 func (c *Client) AllocateTCP() (*Allocation, error) {
-	return c.Allocate(turn.ProtoTCP)
+	return c.Allocate(turn.ProtoTCP, AUTOIPV)
+}
+
+func (c *Client) AllocateUDP4() (*Allocation, error) {
+	return c.Allocate(turn.ProtoUDP, IPV4)
+}
+
+func (c *Client) AllocateTCP4() (*Allocation, error) {
+	return c.Allocate(turn.ProtoTCP, IPV4)
+}
+
+func (c *Client) AllocateUDP6() (*Allocation, error) {
+	return c.Allocate(turn.ProtoUDP, IPV6)
+}
+
+func (c *Client) AllocateTCP6() (*Allocation, error) {
+	return c.Allocate(turn.ProtoTCP, IPV6)
 }
 
 // Allocate creates an allocation for current 5-tuple. Currently there can be
 // only one allocation per client, because client wraps one net.Conn.
-func (c *Client) Allocate(proto turn.Protocol) (*Allocation, error) {
+func (c *Client) Allocate(proto turn.Protocol, family ipversion) (*Allocation, error) {
 	var (
 		nonce stun.Nonce
 		res   = stun.New()
@@ -112,10 +138,31 @@ func (c *Client) Allocate(proto turn.Protocol) (*Allocation, error) {
 		return nil, fmt.Errorf("Invalid protocol supplied")
 	}
 
-	req, reqErr := stun.Build(stun.TransactionID,
-		turn.AllocateRequest, protoSetter,
-		stun.Fingerprint,
-	)
+	var familySetter stun.Setter
+
+	// check if we should specifically request the right IPv family
+	switch family {
+	case IPV4:
+		familySetter = turn.RequestedFamilyIPv4
+	case IPV6:
+		familySetter = turn.RequestedFamilyIPv6
+	}
+
+	var req *stun.Message
+	var reqErr error
+
+	if familySetter != nil {
+		req, reqErr = stun.Build(stun.TransactionID,
+			turn.AllocateRequest, protoSetter, familySetter,
+			stun.Fingerprint,
+		)
+	} else {
+		req, reqErr = stun.Build(stun.TransactionID,
+			turn.AllocateRequest, protoSetter,
+			stun.Fingerprint,
+		)
+	}
+
 	if reqErr != nil {
 		return nil, reqErr
 	}
